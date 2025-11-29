@@ -1,0 +1,13 @@
+# 🔐 Three-Factor Authentication for Online Transactions (350 Words)
+
+This project presents a secure, multi-layered authentication system designed to enhance the safety of online financial transactions by combining three independent factors of identity verification: **password-based login**, **SMS-based one-time password (OTP)**, and **fingerprint-based biometric authentication**. Each layer reinforces the others, creating a robust security framework that significantly reduces the risk of impersonation, credential theft, and fraudulent access.
+
+The system begins with the traditional **knowledge factor**, where users authenticate using a username and password. This login step initiates the second layer — the **possession factor** — through the generation of a unique OTP delivered to the user’s registered mobile number. This ensures that even if login credentials are compromised, access cannot be granted without physical possession of the user’s mobile device.
+
+The final layer incorporates **inherence-based authentication** through the use of fingerprint biometrics. Implemented on an Android device equipped with a fingerprint sensor, this step ensures that only the legitimate owner can complete the transaction. The project demonstrates how biometric verification can be seamlessly integrated into a multi-factor flow using Android’s built-in fingerprint APIs.
+
+To showcase the system architecture, this repository includes sample PHP scripts that demonstrate how user registration, login processing, OTP generation, and server-side verification can be handled using **PHP and MySQL**. Additionally, the Android module demonstrates how fingerprint authentication can be implemented using platform-specific security checks, permission handling, and biometric prompts. Together, these components illustrate how the system could be expanded into a complete production-ready platform.
+
+Screenshot assets extracted from the original project document illustrate form designs, authentication flow diagrams, and conceptual architecture. The code samples in this repository are simplified representations meant for educational and portfolio purposes, demonstrating the logic behind multi-factor authentication without exposing sensitive credentials or API keys.
+
+Overall, this project highlights a strong understanding of authentication workflows, backend integration, mobile security, and user experience design. It emphasizes how combining multiple layers of authentication can create a far more secure environment for handling digital transactions, protecting user data, and preventing unauthorized access.
