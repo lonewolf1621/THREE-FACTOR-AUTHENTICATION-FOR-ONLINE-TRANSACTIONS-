@@ -1,0 +1,50 @@
+name: uptime
+
+# Every 6 hours: sign up a throwaway demo account on the live site, enrol an
+# authenticator, and check the exempt, step-up and blocked payment paths plus
+# security headers. A failure opens (or comments on) an issue labelled
+# "uptime"; the next passing run closes it.
+on:
+  schedule:
+    - cron: "53 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  APP_URL: https://securepay-3fa.onrender.com
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python scripts/smoke_test.py "$APP_URL"
+
+  report:
+    needs: [live]
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      RESULT: ${{ needs.live.result }}
+    steps:
+      - name: Open or close the uptime issue
+        run: |
+          gh label create uptime --color B60205 --description "Live demo check failed" 2>/dev/null || true
+          open=$(gh issue list --label uptime --state open --json number --jq '.[0].number')
+          if [ "$RESULT" = success ]; then
+            [ -n "$open" ] && gh issue close "$open" --comment "Back up: live checks passed ($RUN_URL)."
+            exit 0
+          fi
+          body="Live check failed at $(date -u +'%Y-%m-%d %H:%M UTC'). Logs: $RUN_URL"
+          if [ -n "$open" ]; then gh issue comment "$open" --body "$body"; else gh issue create --title "Live demo down" --label uptime --body "$body"; fi
+          exit 1
