@@ -2,7 +2,7 @@
 
 [![ci](https://github.com/lonewolf1621/THREE-FACTOR-AUTHENTICATION-FOR-ONLINE-TRANSACTIONS-/actions/workflows/ci.yml/badge.svg)](https://github.com/lonewolf1621/THREE-FACTOR-AUTHENTICATION-FOR-ONLINE-TRANSACTIONS-/actions/workflows/ci.yml) [![codeql](https://github.com/lonewolf1621/THREE-FACTOR-AUTHENTICATION-FOR-ONLINE-TRANSACTIONS-/actions/workflows/codeql.yml/badge.svg)](https://github.com/lonewolf1621/THREE-FACTOR-AUTHENTICATION-FOR-ONLINE-TRANSACTIONS-/actions/workflows/codeql.yml) [![uptime](https://github.com/lonewolf1621/THREE-FACTOR-AUTHENTICATION-FOR-ONLINE-TRANSACTIONS-/actions/workflows/uptime.yml/badge.svg)](https://github.com/lonewolf1621/THREE-FACTOR-AUTHENTICATION-FOR-ONLINE-TRANSACTIONS-/actions/workflows/uptime.yml)
 
-**Live demo:** https://securepay-3fa.onrender.com (free hosting: the first visit can take about a minute to wake up) · **API docs:** `/docs`
+**Live demo:** https://three-factor-authentication-for-online.onrender.com (free hosting: the first visit can take about a minute to wake up) · **API docs:** `/docs`
 
 A bank-style sign-in and payment flow that combines three independent factors and asks for more of them only when the risk or the amount calls for it:
 

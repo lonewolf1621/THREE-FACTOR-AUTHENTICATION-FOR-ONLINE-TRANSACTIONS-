@@ -4,7 +4,7 @@ Registers a throwaway demo account, enrols an authenticator app, makes an
 exempt payment, a stepped-up payment confirmed with a code, and a simulated
 attacker payment that must be blocked. Standard library only.
 
-    python scripts/smoke_test.py https://securepay-3fa.onrender.com
+    python scripts/smoke_test.py https://three-factor-authentication-for-online.onrender.com
 """
 import base64
 import hashlib
@@ -43,7 +43,7 @@ class Client:
 
 
 def main():
-    base = sys.argv[1] if len(sys.argv) > 1 else "https://securepay-3fa.onrender.com"
+    base = sys.argv[1] if len(sys.argv) > 1 else "https://three-factor-authentication-for-online.onrender.com"
     c = Client(base)
     start, last = time.time(), None
     while True:

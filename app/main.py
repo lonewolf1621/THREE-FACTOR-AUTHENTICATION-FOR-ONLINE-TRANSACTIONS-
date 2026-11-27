@@ -229,12 +229,12 @@ class PaymentIn(BaseModel):
 
 
 # ---------------------------------------------------------------- pages
-@app.get("/", include_in_schema=False)
+@app.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
 def index():
     return FileResponse(os.path.join(STATIC, "index.html"))
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 def health():
     db.q1("SELECT 1 AS ok")
     return {"status": "ok", "demo_mode": DEMO_MODE, "risk_model": risk.MODEL.get("_note", "")}

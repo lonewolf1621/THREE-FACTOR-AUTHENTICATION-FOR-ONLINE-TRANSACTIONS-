@@ -14,7 +14,7 @@ permissions:
   issues: write
 
 env:
-  APP_URL: https://securepay-3fa.onrender.com
+  APP_URL: https://three-factor-authentication-for-online.onrender.com
 
 jobs:
   live:
