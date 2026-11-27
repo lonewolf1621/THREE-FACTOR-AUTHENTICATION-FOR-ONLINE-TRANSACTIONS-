@@ -13,6 +13,7 @@ import os
 import re
 import time
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -35,7 +36,14 @@ PAYMENT_TTL = 5 * 60
 REGISTER_LIMIT = int(os.getenv("REGISTER_LIMIT_PER_HOUR", "10"))
 EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[A-Za-z]{2,24}$")
 
-app = FastAPI(title="SecurePay 3FA", version="1.0.0",
+@asynccontextmanager
+async def lifespan(_app):
+    db.connect()
+    db.prune()
+    yield
+
+
+app = FastAPI(title="SecurePay 3FA", version="1.0.0", lifespan=lifespan,
               description="Risk-based three-factor authentication for online payments (demo).")
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
@@ -58,12 +66,6 @@ async def security_headers(request: Request, call_next):
     if request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
     return response
-
-
-@app.on_event("startup")
-def startup():
-    db.connect()
-    db.prune()
 
 
 def _scheme(request: Request) -> str:

@@ -164,3 +164,20 @@ def test_passkey_registration_options():
 
 def test_health():
     assert new_client().get("/health").json()["status"] == "ok"
+
+
+def test_webauthn_library_contract():
+    """Guard against breaking changes in py_webauthn: the keyword arguments we pass must exist."""
+    import inspect
+
+    import webauthn
+    reg = inspect.signature(webauthn.verify_registration_response).parameters
+    auth = inspect.signature(webauthn.verify_authentication_response).parameters
+    gen_auth = inspect.signature(webauthn.generate_authentication_options).parameters
+    gen_reg = inspect.signature(webauthn.generate_registration_options).parameters
+    assert {"credential", "expected_challenge", "expected_rp_id", "expected_origin", "require_user_verification"} <= set(reg)
+    assert {"credential", "expected_challenge", "expected_rp_id", "expected_origin", "credential_public_key",
+            "credential_current_sign_count", "require_user_verification"} <= set(auth)
+    assert {"rp_id", "challenge", "allow_credentials", "user_verification", "timeout"} <= set(gen_auth)
+    assert {"rp_id", "rp_name", "user_id", "user_name", "user_display_name", "exclude_credentials",
+            "authenticator_selection", "timeout"} <= set(gen_reg)
