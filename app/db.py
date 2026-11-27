@@ -4,11 +4,19 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import tempfile
 import threading
 import time
 from contextlib import contextmanager
 
-DB_PATH = os.getenv("DB_PATH", "/tmp/securepay.sqlite3")
+def _default_path() -> str:
+    """A private (0700) directory under the system temp dir; set DB_PATH for a persistent disk."""
+    d = os.path.join(tempfile.gettempdir(), f"securepay-{os.getuid() if hasattr(os, 'getuid') else 'app'}")
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    return os.path.join(d, "app.sqlite3")
+
+
+DB_PATH = os.getenv("DB_PATH") or _default_path()
 RETENTION_DAYS = float(os.getenv("RETENTION_DAYS", "3"))
 _lock = threading.RLock()
 _conn: sqlite3.Connection | None = None
