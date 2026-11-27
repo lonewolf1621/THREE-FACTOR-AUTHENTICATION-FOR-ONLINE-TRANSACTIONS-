@@ -20,6 +20,7 @@ jobs:
           python-version: "3.11"
           cache: pip
       - run: pip install -r requirements-dev.txt
+      - run: pip freeze | grep -iE "^(fastapi|starlette|uvicorn|webauthn|qrcode|pydantic|cryptography)=="
       - run: pytest -q
 
   security:
