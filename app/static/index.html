@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SecurePay 3FA · risk-based three-factor authentication</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+<header>
+  <div class="brand">🔐 SecurePay <span>3FA</span></div>
+  <div class="tag">Demo bank · no real money · data deleted after 3 days</div>
+  <button id="logoutBtn" class="ghost hidden">Sign out</button>
+</header>
+
+<main>
+  <section id="intro" class="card">
+    <h1>Three-factor authentication that adapts to risk</h1>
+    <p>Password (something you know) · authenticator-app code (something you have) ·
+       passkey with fingerprint or face (something you are). A risk model scores every sign-in and
+       payment, and asks for more factors only when the risk or the amount calls for it.</p>
+  </section>
+
+  <aside id="demoPanel" class="card hidden">
+    <h3>🧪 Simulate risk signals</h3>
+    <p class="muted">Demo only: pretend this request comes from an attacker-like context and watch the
+      risk score and required factors change.</p>
+    <label><input type="checkbox" value="new_device"> New device</label>
+    <label><input type="checkbox" value="new_network"> New network</label>
+    <label><input type="checkbox" value="odd_hour"> Unusual time of day</label>
+    <label><input type="checkbox" value="failures"> Recent failed attempts</label>
+  </aside>
+
+  <!-- Signed out -->
+  <section id="authCard" class="card">
+    <div class="tabs">
+      <button class="tab active" data-tab="loginForm">Sign in</button>
+      <button class="tab" data-tab="registerForm">Create account</button>
+    </div>
+    <form id="loginForm">
+      <label>Email<input name="email" type="email" autocomplete="username webauthn" required></label>
+      <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+      <button type="submit">Sign in</button>
+    </form>
+    <form id="registerForm" class="hidden">
+      <label>Name<input name="name" autocomplete="name" required maxlength="80"></label>
+      <label>Email<input name="email" type="email" autocomplete="username" required></label>
+      <label>Password <small>(10+ characters, not a common password)</small>
+        <input name="password" type="password" autocomplete="new-password" required minlength="10"></label>
+      <button type="submit">Create account</button>
+    </form>
+    <div id="authMsg" class="msg"></div>
+  </section>
+
+  <!-- Step-up during sign-in -->
+  <section id="stepCard" class="card hidden">
+    <h2>One more step</h2>
+    <div id="stepRisk"></div>
+    <form id="stepTotp" class="hidden">
+      <label>Code from your authenticator app<input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required></label>
+      <button type="submit">Verify code</button>
+    </form>
+    <div id="stepPasskey" class="hidden">
+      <button id="stepPasskeyBtn">Confirm with fingerprint / face (passkey)</button>
+    </div>
+    <div id="stepMsg" class="msg"></div>
+  </section>
+
+  <!-- Signed in -->
+  <section id="app" class="hidden">
+    <div class="card">
+      <h2 id="hello"></h2>
+      <div id="loginRisk" class="muted"></div>
+    </div>
+
+    <div class="card">
+      <h2>Your factors</h2>
+      <ul class="factors">
+        <li><span class="ok">✔</span> <b>Password</b> <span class="muted">scrypt-hashed</span></li>
+        <li id="fTotp"></li>
+        <li id="fPasskey"></li>
+      </ul>
+      <div id="totpSetup" class="hidden">
+        <p>Scan this with Google Authenticator, Microsoft Authenticator, 1Password or similar:</p>
+        <img id="totpQr" alt="QR code for your authenticator app">
+        <p class="muted">Can't scan? Enter this key: <code id="totpSecret"></code></p>
+        <form id="totpConfirm">
+          <label>Enter the 6-digit code it shows<input name="code" inputmode="numeric" maxlength="6" required></label>
+          <button type="submit">Confirm</button>
+        </form>
+      </div>
+      <div id="factorMsg" class="msg"></div>
+    </div>
+
+    <div class="card">
+      <h2>Make a payment <small class="muted">(simulated)</small></h2>
+      <form id="payForm" class="row">
+        <label>Payee<input name="payee" required maxlength="80" placeholder="e.g. Landlord"></label>
+        <label>Amount<input name="amount" type="number" min="0.01" step="0.01" required placeholder="25.00"></label>
+        <label>Currency<select name="currency"><option>GBP</option><option>EUR</option><option>USD</option><option>INR</option></select></label>
+        <button type="submit">Pay</button>
+      </form>
+      <p class="muted">Try £20 (exempt), £150 (needs your code) and £800 or a simulated attacker (needs your fingerprint too).</p>
+      <div id="payResult"></div>
+    </div>
+
+    <div class="card">
+      <h2>Payments</h2>
+      <table id="payments"><thead><tr><th>When</th><th>Payee</th><th>Amount</th><th>Risk</th><th>Status</th></tr></thead><tbody></tbody></table>
+    </div>
+
+    <div class="card">
+      <h2>Security activity</h2>
+      <p class="muted">Audit trail of authentication events. Codes, passwords and full IP addresses are never stored.</p>
+      <table id="activity"><thead><tr><th>When (UTC)</th><th>Event</th><th>Network</th><th>Details</th></tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <a href="https://github.com/lonewolf1621/THREE-FACTOR-AUTHENTICATION-FOR-ONLINE-TRANSACTIONS-">Source code &amp; threat model</a> ·
+  <a href="/docs">API docs</a> · Built by Vishal Kumar Reddy Gudla
+</footer>
+</body>
+</html>

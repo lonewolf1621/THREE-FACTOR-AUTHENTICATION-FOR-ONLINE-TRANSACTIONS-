@@ -1,0 +1,61 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "29 5 * * 1"   # weekly, catches dependency drift
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: pytest -q
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install bandit==1.8.0 pip-audit==2.7.3
+      - name: Bandit (static analysis)
+        run: bandit -r app -ll
+      - name: pip-audit (known vulnerabilities in dependencies)
+        run: pip-audit -r requirements.txt --strict
+
+  risk-model:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements-train.txt
+      - name: Retrain and check the model reproduces
+        run: |
+          python scripts/train_risk_model.py > /tmp/metrics.txt
+          git diff --stat
+          python - <<'PY'
+          import json
+          m = json.load(open("docs/risk_model_metrics.json"))
+          assert m["payment"]["roc_auc"] >= 0.95 and m["login"]["roc_auc"] >= 0.9, m
+          print("risk model OK:", m["login"]["roc_auc"], m["payment"]["roc_auc"])
+          PY
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t securepay-3fa .

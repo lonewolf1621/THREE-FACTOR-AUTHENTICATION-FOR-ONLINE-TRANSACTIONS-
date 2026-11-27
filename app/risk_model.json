@@ -1,0 +1,39 @@
+{
+  "_note": "Trained on simulated behaviour by scripts/train_risk_model.py; see docs/risk_model.md",
+  "login": {
+    "features": [
+      "new_device",
+      "new_network",
+      "odd_hour",
+      "recent_failures"
+    ],
+    "intercept": -8.81348,
+    "weights": {
+      "new_device": 3.27229,
+      "new_network": 2.42061,
+      "odd_hour": 7.89503,
+      "recent_failures": 9.19517
+    }
+  },
+  "payment": {
+    "features": [
+      "new_device",
+      "new_network",
+      "odd_hour",
+      "recent_failures",
+      "amount_ratio",
+      "new_payee",
+      "velocity"
+    ],
+    "intercept": -11.34497,
+    "weights": {
+      "new_device": 3.12797,
+      "new_network": 2.24265,
+      "odd_hour": 7.47873,
+      "recent_failures": 8.25738,
+      "amount_ratio": 3.61813,
+      "new_payee": 2.58232,
+      "velocity": 5.87731
+    }
+  }
+}
