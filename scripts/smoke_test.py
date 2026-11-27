@@ -35,11 +35,15 @@ class Client:
         data = None if body is None else json.dumps(body).encode()
         req = urllib.request.Request(self.base + path, data=data, headers={
             "Content-Type": "application/json", "User-Agent": "securepay-smoke-test", "X-Demo-Signals": signals})
+        def parse(raw, headers):
+            if "json" not in (headers.get("Content-Type") or ""):
+                return {}
+            return json.loads(raw or b"{}")
         try:
             with self.opener.open(req, timeout=timeout) as r:
-                return r.status, json.loads(r.read() or b"{}"), r.headers
+                return r.status, parse(r.read(), r.headers), r.headers
         except urllib.error.HTTPError as e:
-            return e.code, json.loads(e.read() or b"{}"), e.headers
+            return e.code, parse(e.read(), e.headers), e.headers
 
 
 def main():
