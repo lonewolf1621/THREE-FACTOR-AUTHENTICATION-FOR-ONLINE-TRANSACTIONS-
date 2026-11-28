@@ -63,6 +63,12 @@ def main():
     print(f"OK   /health after {time.time() - start:.0f}s")
 
     problems = []
+    for path in ("/api/admin/stats", "/api/admin/users"):
+        code, _, _ = Client(base).call(path)
+        if code not in (401, 403):
+            problems.append(f"{path} returned {code} without an admin session")
+    _, st, _ = c.call("/api/status")
+    print(f"OK   admin API locked; status: {st}")
     status, _, headers = c.call("/")
     csp = headers.get("Content-Security-Policy", "")
     if status != 200 or "default-src 'self'" not in csp or "max-age" not in headers.get("Strict-Transport-Security", ""):
