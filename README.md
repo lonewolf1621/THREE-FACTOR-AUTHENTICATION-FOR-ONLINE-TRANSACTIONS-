@@ -31,6 +31,15 @@ The rules follow the shape of PSD2 Strong Customer Authentication: the low-value
 
 **Try it:** create an account, set up an authenticator app and a passkey, then pay £20 (exempt), £150 (code) and £800 (code + fingerprint). Tick **Simulate risk signals** to make the same request look like an account takeover and watch the score, the reasons and the decision change.
 
+## Owner admin
+
+Accounts whose email is listed in `ADMIN_EMAILS` (set in the hosting dashboard) get an **Admin** panel, but it only opens after a sign-in with **all three factors**: an admin login always asks for the authenticator code *and* the passkey, whatever the risk score. The panel gives:
+
+- **Stats:** users, factor adoption, suspended and locked accounts, active sessions, payments by status and risk band, events in the last 24 hours
+- **Users:** suspend (ends their sessions and blocks sign-in), unlock, sign out everywhere, delete; admin accounts cannot be changed from the panel
+- **Audit trail** across all users, filterable by event and email; every admin action is itself audited
+- **Maintenance:** a banner for every visitor, close registration, pause payments, switch off the risk-simulation panel, clear demo data (admin accounts are kept and never auto-deleted)
+
 ## Engineering
 
 - **FastAPI** service with a vanilla-JS front end (no inline script, strict Content-Security-Policy), SQLite storage, Docker image running as a non-root user.
