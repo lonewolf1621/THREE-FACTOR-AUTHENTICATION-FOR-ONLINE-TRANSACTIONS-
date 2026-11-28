@@ -40,3 +40,11 @@ th { color:var(--muted); font-weight:600; }
 .st.approved { color:var(--ok); } .st.blocked, .st.failed { color:var(--bad); } .st.step_up, .st.needs_enrolment { color:var(--warn); }
 footer { text-align:center; color:var(--muted); font-size:13px; padding:24px; }
 footer a { color:var(--accent); }
+.banner { background:#3a2f12; border-color:#7a5d1a; color:#ffd98a; }
+.metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:14px; }
+.metric { background:#0e1320; border:1px solid var(--line); border-radius:8px; padding:10px; font-size:13px; color:var(--muted); }
+.metric b { display:block; font-size:20px; color:var(--text); }
+label.check { display:flex; align-items:center; gap:8px; } label.check input { width:auto; margin:0; }
+button.danger { background:var(--bad); }
+#adminCard h3 { margin-top:18px; }
+.st.suspended, .st.locked { color:var(--bad); } .st.active { color:var(--ok); }

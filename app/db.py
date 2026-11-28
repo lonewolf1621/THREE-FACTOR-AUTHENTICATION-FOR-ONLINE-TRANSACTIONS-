@@ -59,6 +59,9 @@ CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY, user_id INTEGER, ts REAL NOT NULL, type TEXT NOT NULL,
   network TEXT, device TEXT, detail TEXT
 );
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY, value TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS rate (
   key TEXT NOT NULL, ts REAL NOT NULL
 );
@@ -114,11 +117,39 @@ def log_event(user_id, type_: str, network: str = "", device: str = "", **detail
         (user_id, time.time(), type_, network, (device or "")[:8], json.dumps(detail)))
 
 
-def prune() -> None:
+DEFAULT_SETTINGS = {"maintenance_banner": "", "registration_open": True, "payments_enabled": True,
+                    "demo_signals_enabled": True}
+
+
+def get_settings() -> dict:
+    out = dict(DEFAULT_SETTINGS)
+    for r in q("SELECT key, value FROM settings"):
+        if r["key"] in out:
+            out[r["key"]] = json.loads(r["value"])
+    return out
+
+
+def set_settings(changes: dict) -> dict:
+    for k, v in changes.items():
+        if k in DEFAULT_SETTINGS:
+            run("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (k, json.dumps(v)))
+    return get_settings()
+
+
+def delete_user(uid: int) -> None:
+    with tx() as c:
+        for table in ("passkeys", "sessions", "devices", "networks", "logins", "payments"):
+            c.execute(f"DELETE FROM {table} WHERE user_id = ?", (uid,))  # nosec B608 - fixed table names
+        c.execute("DELETE FROM users WHERE id = ?", (uid,))
+
+
+def prune(keep_emails: tuple = ()) -> None:
     """Delete demo accounts (and everything they own) older than the retention period."""
     cutoff = time.time() - RETENTION_DAYS * 86400
     with tx() as c:
-        old = [r["id"] for r in c.execute("SELECT id FROM users WHERE created < ?", (cutoff,))]
+        old = [r["id"] for r in c.execute("SELECT id, email FROM users WHERE created < ?", (cutoff,))
+               if r["email"] not in keep_emails]
         for uid in old:
             for table in ("passkeys", "sessions", "devices", "networks", "logins", "payments", "events"):
                 c.execute(f"DELETE FROM {table} WHERE user_id = ?", (uid,))  # nosec B608 - fixed table names

@@ -62,10 +62,55 @@ function riskHtml(r) {
 }
 const FACTOR_NAMES = {totp: "authenticator code", passkey: "fingerprint / face (passkey)"};
 
+async function showBanner() {
+  try {
+    const st = await api("/api/status");
+    $("#banner").textContent = st.maintenance_banner ? "📢 " + st.maintenance_banner : "";
+    show($("#banner"), !!st.maintenance_banner);
+    show($("#demoPanel"), st.demo_signals_enabled);
+  } catch { /* ignore */ }
+}
+
+async function adminAction(method, path, body) {
+  try { await api(path, body === undefined ? {} : body, method); msg($("#adminMsg"), "Done.", "ok"); loadAdmin(); }
+  catch (e) { msg($("#adminMsg"), e.message); }
+}
+
+async function loadAdmin(filter = {}) {
+  const [st, us, au, cfg] = await Promise.all([api("/api/admin/stats"), api("/api/admin/users"),
+    api("/api/admin/audit?" + new URLSearchParams(filter)), api("/api/admin/settings")]);
+  const u = st.users, p = st.payments.by_status;
+  $("#adminMetrics").innerHTML = [["Users", u.total], ["New (24h)", u.new_24h], ["All 3 factors", u.all_three_factors],
+    ["Suspended", u.suspended], ["Locked (15 min)", u.temporarily_locked], ["Active sessions", st.active_sessions],
+    ["Payments approved", p.approved || 0], ["Stepped up", (p.step_up || 0)], ["Blocked", p.blocked || 0],
+    ["High-risk payments", st.payments.risk_bands.high]]
+    .map(([k, v]) => `<div class="metric">${esc(k)}<b>${esc(v)}</b></div>`).join("");
+  $("#adminUsers tbody").innerHTML = us.users.map((x) => `<tr><td>${esc(x.email)}${x.admin ? " <b>(admin)</b>" : ""}</td>
+    <td>${esc((x.created || "").slice(0, 16).replace("T", " "))}</td><td>${esc((x.last_login || "—").slice(0, 16).replace("T", " "))}</td>
+    <td>pw${x.authenticator_app ? " + app" : ""}${x.passkeys ? " + passkey" : ""}</td><td>${x.payments}</td><td class="st ${esc(x.status)}">${esc(x.status)}</td>
+    <td>${x.admin ? "" : `<button class="small ghost" data-act="${x.status === "active" ? "suspend" : "unlock"}" data-id="${x.id}">${x.status === "active" ? "Suspend" : "Unlock"}</button>
+      <button class="small ghost" data-act="sign-out" data-id="${x.id}">Sign out</button>
+      <button class="small danger" data-act="delete" data-id="${x.id}" data-email="${esc(x.email)}">Delete</button>`}</td></tr>`).join("");
+  $("#adminUsers tbody").querySelectorAll("button[data-act]").forEach((b) => b.onclick = () => {
+    const id = b.dataset.id, act = b.dataset.act;
+    if (act === "delete") {
+      if (b.dataset.confirm !== "1") { b.dataset.confirm = "1"; b.textContent = "Confirm delete"; return; }
+      return adminAction("DELETE", `/api/admin/users/${id}`, undefined);
+    }
+    adminAction("POST", `/api/admin/users/${id}/${act}`);
+  });
+  $("#adminAudit tbody").innerHTML = au.events.map((e) => `<tr><td>${esc(e.time.replace("T", " "))}</td><td>${esc(e.email || "—")}</td>
+    <td>${esc(e.type.replace(/_/g, " "))}</td><td>${esc(e.network)}</td><td class="muted">${esc(Object.entries(e.detail)
+    .filter(([, v]) => v !== null && !(Array.isArray(v) && !v.length)).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join("+") : v}`).join(" · "))}</td></tr>`).join("");
+  const f = $("#adminSettings");
+  f.maintenance_banner.value = cfg.maintenance_banner; f.registration_open.checked = cfg.registration_open;
+  f.payments_enabled.checked = cfg.payments_enabled; f.demo_signals_enabled.checked = cfg.demo_signals_enabled;
+}
+
 async function refresh() {
+  showBanner();
   let me;
   try { me = await api("/api/me"); } catch { me = null; }
-  show($("#demoPanel"), true);
   if (!me || me.state !== "active") {
     show($("#authCard"), !me || me.state !== "pending"); show($("#app"), false); show($("#logoutBtn"), !!me);
     if (me && me.state === "pending") showStep(me.pending, me.login_risk);
@@ -85,6 +130,15 @@ async function refresh() {
   if ($("#totpBtn")) $("#totpBtn").onclick = setupTotp;
   $("#pkBtn").onclick = addPasskey;
   loadTables();
+  show($("#adminCard"), me.is_admin);
+  if (me.is_admin) {
+    show($("#adminBody"), me.admin_ready); show($("#adminLocked"), !me.admin_ready);
+    if (!me.admin_ready) {
+      $("#adminLocked").textContent = (me.factors.totp && me.factors.passkey)
+        ? "Sign out and sign in again with password, authenticator code and passkey to open the admin tools."
+        : "Set up your authenticator app and a passkey above, then sign in again with all three factors to open the admin tools.";
+    } else loadAdmin().catch((e) => msg($("#adminMsg"), e.message));
+  }
 }
 
 function showStep(required, risk) {
@@ -193,5 +247,14 @@ document.addEventListener("DOMContentLoaded", () => {
     catch (e) { $("#payResult").innerHTML = `<div class="msg error">${esc(e.message)}</div>`; }
   };
   $("#logoutBtn").onclick = async () => { await api("/api/logout", {}); location.reload(); };
+  $("#auditFilter").onsubmit = (ev) => { ev.preventDefault();
+    const f = {type: ev.target.type.value, email: ev.target.email.value};
+    Object.keys(f).forEach((k) => !f[k] && delete f[k]); loadAdmin(f).catch((e) => msg($("#adminMsg"), e.message)); };
+  $("#adminSettings").onsubmit = (ev) => { ev.preventDefault(); const f = ev.target;
+    adminAction("PUT", "/api/admin/settings", {maintenance_banner: f.maintenance_banner.value, registration_open: f.registration_open.checked,
+      payments_enabled: f.payments_enabled.checked, demo_signals_enabled: f.demo_signals_enabled.checked}).then(showBanner); };
+  $("#adminClear").onsubmit = (ev) => { ev.preventDefault();
+    if (ev.target.confirm.value !== "DELETE") return msg($("#adminMsg"), "Type DELETE to confirm.");
+    adminAction("POST", "/api/admin/clear-demo-data?confirm=DELETE"); ev.target.confirm.value = ""; };
   refresh();
 });

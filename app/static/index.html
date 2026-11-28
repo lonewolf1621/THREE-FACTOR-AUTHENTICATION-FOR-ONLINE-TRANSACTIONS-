@@ -15,6 +15,7 @@
 </header>
 
 <main>
+  <div id="banner" class="card banner hidden"></div>
   <section id="intro" class="card">
     <h1>Three-factor authentication that adapts to risk</h1>
     <p>Password (something you know) · authenticator-app code (something you have) ·
@@ -108,6 +109,36 @@
     <div class="card">
       <h2>Payments</h2>
       <table id="payments"><thead><tr><th>When</th><th>Payee</th><th>Amount</th><th>Risk</th><th>Status</th></tr></thead><tbody></tbody></table>
+    </div>
+
+    <div id="adminCard" class="card hidden">
+      <h2>🛠️ Admin</h2>
+      <div id="adminLocked" class="muted hidden"></div>
+      <div id="adminBody" class="hidden">
+        <div id="adminMetrics" class="metrics"></div>
+        <h3>Users</h3>
+        <table id="adminUsers"><thead><tr><th>Email</th><th>Created</th><th>Last sign-in</th><th>Factors</th><th>Payments</th><th>Status</th><th></th></tr></thead><tbody></tbody></table>
+        <h3>Audit trail (all users)</h3>
+        <form id="auditFilter" class="row">
+          <label>Event contains<input name="type" placeholder="e.g. failed, payment, admin"></label>
+          <label>Email<input name="email" type="email"></label>
+          <button type="submit">Filter</button>
+        </form>
+        <table id="adminAudit"><thead><tr><th>When (UTC)</th><th>User</th><th>Event</th><th>Network</th><th>Details</th></tr></thead><tbody></tbody></table>
+        <h3>Maintenance</h3>
+        <form id="adminSettings">
+          <label>Banner shown to everyone (empty = none)<input name="maintenance_banner" maxlength="300"></label>
+          <label class="check"><input type="checkbox" name="registration_open"> Registration open</label>
+          <label class="check"><input type="checkbox" name="payments_enabled"> Payments enabled</label>
+          <label class="check"><input type="checkbox" name="demo_signals_enabled"> "Simulate risk signals" panel enabled</label>
+          <button type="submit">Save settings</button>
+        </form>
+        <form id="adminClear" class="row">
+          <label>Type DELETE to remove every non-admin account<input name="confirm" autocomplete="off"></label>
+          <button type="submit" class="danger">Clear demo data</button>
+        </form>
+        <div id="adminMsg" class="msg"></div>
+      </div>
     </div>
 
     <div class="card">

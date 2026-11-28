@@ -34,12 +34,14 @@ LOCK_AFTER, LOCK_SECONDS = 5, 15 * 60
 MAX_CODE_ATTEMPTS = 5
 PAYMENT_TTL = 5 * 60
 REGISTER_LIMIT = int(os.getenv("REGISTER_LIMIT_PER_HOUR", "10"))
+ADMIN_EMAILS = tuple(e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip())
+LOCKED_FOREVER = 9e15  # "locked_until" value for accounts suspended by an admin
 EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[A-Za-z]{2,24}$")
 
 @asynccontextmanager
 async def lifespan(_app):
     db.connect()
-    db.prune()
+    db.prune(ADMIN_EMAILS)
     yield
 
 
@@ -103,8 +105,16 @@ def device_id(request: Request) -> str:
     return did if re.fullmatch(r"[A-Za-z0-9_-]{20,64}", did) else ""
 
 
+def demo_enabled() -> bool:
+    return DEMO_MODE and db.get_settings()["demo_signals_enabled"]
+
+
+def is_admin(user) -> bool:
+    return bool(user) and user["email"] in ADMIN_EMAILS
+
+
 def demo_signals(request: Request) -> List[str]:
-    if not DEMO_MODE:
+    if not demo_enabled():
         return []
     raw = request.headers.get("x-demo-signals", "")
     return [s for s in raw.split(",") if s in {"new_device", "new_network", "odd_hour", "failures"}]
@@ -166,6 +176,8 @@ def current_session(request: Request, active: bool = True):
     user = db.q1("SELECT * FROM users WHERE id = ?", (s["user_id"],))
     if not user:
         raise HTTPException(status_code=401, detail="Account no longer exists")
+    if user["locked_until"] >= LOCKED_FOREVER:
+        raise HTTPException(status_code=403, detail="This account is suspended")
     return s, user
 
 
@@ -237,13 +249,24 @@ def index():
 @app.api_route("/health", methods=["GET", "HEAD"])
 def health():
     db.q1("SELECT 1 AS ok")
-    return {"status": "ok", "demo_mode": DEMO_MODE, "risk_model": risk.MODEL.get("_note", "")}
+    return {"status": "ok", "demo_mode": demo_enabled(), "risk_model": risk.MODEL.get("_note", "")}
+
+
+@app.get("/api/status")
+def public_status():
+    """Public: maintenance banner and which features are open."""
+    st = db.get_settings()
+    return {"maintenance_banner": st["maintenance_banner"], "registration_open": st["registration_open"],
+            "payments_enabled": st["payments_enabled"], "demo_signals_enabled": demo_enabled()}
 
 
 # ---------------------------------------------------------------- account
 @app.post("/api/register")
 def register(body: Register, request: Request, response: Response):
     require_json(request)
+    st = db.get_settings()
+    if not st["registration_open"] and body.email.strip().lower() not in ADMIN_EMAILS:
+        raise HTTPException(status_code=503, detail=st["maintenance_banner"] or "Registration is closed right now.")
     rate_limit(f"register:{network_of(client_ip(request))}", REGISTER_LIMIT, 3600)
     email = body.email.strip().lower()
     if not EMAIL_RE.match(email):
@@ -286,6 +309,10 @@ def login(body: Login, request: Request, response: Response):
     if not user:
         passwords.dummy_verify(body.password)
         raise generic
+    if user["locked_until"] >= LOCKED_FOREVER:
+        passwords.dummy_verify(body.password)
+        db.log_event(user["id"], "login_blocked_suspended", **ctx(request))
+        raise HTTPException(status_code=403, detail="This account is suspended. Contact the administrator.")
     if user["locked_until"] > time.time():
         db.log_event(user["id"], "login_blocked_locked", **ctx(request))
         raise HTTPException(status_code=423, detail="Too many failed attempts. Try again in 15 minutes.")
@@ -303,6 +330,8 @@ def login(body: Login, request: Request, response: Response):
     r = login_risk(request, user)
     has = enrolled(user)
     required = policy.login_requirements(r.score, has["totp"], has["passkey"])
+    if is_admin(user) and has["totp"] and has["passkey"]:
+        required = ["totp", "passkey"]  # admins always prove all three factors
     state = "pending" if required else "active"
     did = device_id(request)
     _start_session(request, response, user["id"], state, ["password"] + required, ["password"], did, r)
@@ -425,7 +454,8 @@ def me(request: Request):
     return {"name": user["name"], "email": user["email"], "state": s["state"],
             "factors": enrolled(user), "session_factors": json.loads(s["satisfied"]),
             "pending": [f for f in json.loads(s["required"]) if f not in json.loads(s["satisfied"])],
-            "login_risk": json.loads(s["risk"]) if s["risk"] else None, "demo_mode": DEMO_MODE}
+            "login_risk": json.loads(s["risk"]) if s["risk"] else None, "demo_mode": demo_enabled(),
+            "is_admin": is_admin(user), "admin_ready": _admin_ready(s, user)}
 
 
 # ---------------------------------------------------------------- enrolment
@@ -514,6 +544,9 @@ def create_payment(body: PaymentIn, request: Request, sess=Depends(active_sessio
     require_json(request)
     s, user = sess
     uid = user["id"]
+    st = db.get_settings()
+    if not st["payments_enabled"]:
+        raise HTTPException(status_code=503, detail=st["maintenance_banner"] or "Payments are paused right now.")
     rate_limit(f"payments:{uid}", 30, 3600)
     payee = " ".join(body.payee.split())
     base = login_risk(request, user).features
@@ -628,6 +661,168 @@ def activity(sess=Depends(active_session)):
     return {"events": [{"time": datetime.fromtimestamp(r["ts"], timezone.utc).isoformat(timespec="seconds"),
                         "type": r["type"], "network": r["network"], "device": r["device"],
                         "detail": json.loads(r["detail"] or "{}")} for r in rows]}
+
+
+# ---------------------------------------------------------------- owner admin
+def _admin_ready(session, user) -> bool:
+    return is_admin(user) and session["state"] == "active" and \
+        {"password", "totp", "passkey"} <= set(json.loads(session["satisfied"]))
+
+
+def admin_session(request: Request):
+    s, user = current_session(request, active=True)
+    if not is_admin(user):
+        raise HTTPException(status_code=403, detail="Admins only")
+    if not _admin_ready(s, user):
+        raise HTTPException(status_code=403, detail="Admin needs a sign-in with password, authenticator code and passkey")
+    return s, user
+
+
+class AdminSettings(BaseModel):
+    maintenance_banner: Optional[str] = Field(None, max_length=300)
+    registration_open: Optional[bool] = None
+    payments_enabled: Optional[bool] = None
+    demo_signals_enabled: Optional[bool] = None
+
+
+def _count(sql: str, args=()) -> int:
+    return db.q1(sql, args)["n"]
+
+
+@app.get("/api/admin/stats")
+def admin_stats(sess=Depends(admin_session)):
+    day = time.time() - 86400
+    users = _count("SELECT COUNT(*) AS n FROM users")
+    totp_users = _count("SELECT COUNT(*) AS n FROM users WHERE totp_secret_enc IS NOT NULL")
+    pk_users = _count("SELECT COUNT(DISTINCT user_id) AS n FROM passkeys")
+    statuses = {r["status"]: r["n"] for r in db.q("SELECT status, COUNT(*) AS n FROM payments GROUP BY status")}
+    events_24h = {r["type"]: r["n"] for r in db.q("SELECT type, COUNT(*) AS n FROM events WHERE ts > ? GROUP BY type "
+                                                  "ORDER BY n DESC", (day,))}
+    risks = [json.loads(r["risk"])["score"] for r in db.q("SELECT risk FROM payments")]
+    bands = {"low": sum(x < 0.25 for x in risks), "medium": sum(0.25 <= x < 0.6 for x in risks),
+             "high": sum(x >= 0.6 for x in risks)}
+    return {
+        "users": {"total": users, "authenticator_app": totp_users, "passkey": pk_users,
+                  "all_three_factors": _count("SELECT COUNT(*) AS n FROM users u WHERE totp_secret_enc IS NOT NULL "
+                                              "AND EXISTS (SELECT 1 FROM passkeys p WHERE p.user_id=u.id)"),
+                  "suspended": _count("SELECT COUNT(*) AS n FROM users WHERE locked_until >= ?", (LOCKED_FOREVER,)),
+                  "temporarily_locked": _count("SELECT COUNT(*) AS n FROM users WHERE locked_until > ? AND locked_until < ?",
+                                               (time.time(), LOCKED_FOREVER)),
+                  "new_24h": _count("SELECT COUNT(*) AS n FROM users WHERE created > ?", (day,))},
+        "payments": {"by_status": statuses, "risk_bands": bands,
+                     "approved_value": round(db.q1("SELECT COALESCE(SUM(amount),0) AS v FROM payments "
+                                                   "WHERE status='approved'")["v"], 2)},
+        "events_24h": events_24h,
+        "active_sessions": _count("SELECT COUNT(*) AS n FROM sessions WHERE state='active' AND last_seen > ?",
+                                  (time.time() - SESSION_IDLE,)),
+        "retention_days": db.RETENTION_DAYS,
+    }
+
+
+@app.get("/api/admin/users")
+def admin_users(sess=Depends(admin_session)):
+    rows = db.q("SELECT u.id, u.email, u.name, u.created, u.locked_until, u.failed_count, "
+                "u.totp_secret_enc IS NOT NULL AS totp, "
+                "(SELECT COUNT(*) FROM passkeys p WHERE p.user_id=u.id) AS passkeys, "
+                "(SELECT COUNT(*) FROM payments p WHERE p.user_id=u.id) AS payments, "
+                "(SELECT MAX(ts) FROM events e WHERE e.user_id=u.id AND e.type='login_success') AS last_login "
+                "FROM users u ORDER BY u.created DESC LIMIT 500")
+    iso = lambda t: datetime.fromtimestamp(t, timezone.utc).isoformat(timespec="seconds") if t else None  # noqa: E731
+    return {"users": [{"id": r["id"], "email": r["email"], "name": r["name"], "created": iso(r["created"]),
+                       "last_login": iso(r["last_login"]), "authenticator_app": bool(r["totp"]),
+                       "passkeys": r["passkeys"], "payments": r["payments"], "admin": r["email"] in ADMIN_EMAILS,
+                       "status": "suspended" if r["locked_until"] >= LOCKED_FOREVER else
+                                 "locked" if r["locked_until"] > time.time() else "active"} for r in rows]}
+
+
+def _target(uid: int, admin_user):
+    t = db.q1("SELECT * FROM users WHERE id = ?", (uid,))
+    if not t:
+        raise HTTPException(status_code=404, detail="User not found")
+    if t["id"] == admin_user["id"] or t["email"] in ADMIN_EMAILS:
+        raise HTTPException(status_code=409, detail="Admin accounts cannot be changed here")
+    return t
+
+
+@app.post("/api/admin/users/{uid}/suspend")
+def admin_suspend(uid: int, request: Request, sess=Depends(admin_session)):
+    require_json(request)
+    t = _target(uid, sess[1])
+    db.run("UPDATE users SET locked_until=? WHERE id=?", (LOCKED_FOREVER, uid))
+    db.run("DELETE FROM sessions WHERE user_id=?", (uid,))
+    db.log_event(sess[1]["id"], "admin_suspended_user", **ctx(request), target=t["email"])
+    return {"ok": True}
+
+
+@app.post("/api/admin/users/{uid}/unlock")
+def admin_unlock(uid: int, request: Request, sess=Depends(admin_session)):
+    require_json(request)
+    t = _target(uid, sess[1])
+    db.run("UPDATE users SET locked_until=0, failed_count=0 WHERE id=?", (uid,))
+    db.log_event(sess[1]["id"], "admin_unlocked_user", **ctx(request), target=t["email"])
+    return {"ok": True}
+
+
+@app.post("/api/admin/users/{uid}/sign-out")
+def admin_sign_out(uid: int, request: Request, sess=Depends(admin_session)):
+    require_json(request)
+    t = _target(uid, sess[1])
+    n = db.run("DELETE FROM sessions WHERE user_id=?", (uid,)).rowcount
+    db.log_event(sess[1]["id"], "admin_signed_out_user", **ctx(request), target=t["email"], sessions=n)
+    return {"ok": True, "sessions_ended": n}
+
+
+@app.delete("/api/admin/users/{uid}")
+def admin_delete(uid: int, request: Request, sess=Depends(admin_session)):
+    t = _target(uid, sess[1])
+    db.delete_user(uid)
+    db.log_event(sess[1]["id"], "admin_deleted_user", **ctx(request), target=t["email"])
+    return {"ok": True}
+
+
+@app.get("/api/admin/audit")
+def admin_audit(type: str = "", email: str = "", limit: int = 200, sess=Depends(admin_session)):
+    sql = ("SELECT e.ts, e.type, e.network, e.device, e.detail, u.email FROM events e "
+           "LEFT JOIN users u ON u.id = e.user_id WHERE 1=1")
+    args: list = []
+    if type:
+        sql += " AND e.type LIKE ?"
+        args.append(f"%{type}%")
+    if email:
+        sql += " AND u.email = ?"
+        args.append(email.strip().lower())
+    sql += " ORDER BY e.ts DESC LIMIT ?"
+    args.append(min(max(limit, 1), 500))
+    return {"events": [{"time": datetime.fromtimestamp(r["ts"], timezone.utc).isoformat(timespec="seconds"),
+                        "email": r["email"], "type": r["type"], "network": r["network"], "device": r["device"],
+                        "detail": json.loads(r["detail"] or "{}")} for r in db.q(sql, args)]}
+
+
+@app.get("/api/admin/settings")
+def admin_get_settings(sess=Depends(admin_session)):
+    return db.get_settings()
+
+
+@app.put("/api/admin/settings")
+def admin_put_settings(body: AdminSettings, request: Request, sess=Depends(admin_session)):
+    require_json(request)
+    changes = {k: v for k, v in body.model_dump().items() if v is not None}
+    out = db.set_settings(changes)
+    db.log_event(sess[1]["id"], "admin_changed_settings", **ctx(request), **{k: str(v) for k, v in changes.items()})
+    return out
+
+
+@app.post("/api/admin/clear-demo-data")
+def admin_clear(request: Request, confirm: str = "", sess=Depends(admin_session)):
+    require_json(request)
+    if confirm != "DELETE":
+        raise HTTPException(status_code=422, detail="Pass ?confirm=DELETE to remove every non-admin account")
+    ids = [r["id"] for r in db.q("SELECT id, email FROM users") if r["email"] not in ADMIN_EMAILS]
+    for uid in ids:
+        db.delete_user(uid)
+        db.run("DELETE FROM events WHERE user_id=?", (uid,))
+    db.log_event(sess[1]["id"], "admin_cleared_demo_data", **ctx(request), accounts_removed=len(ids))
+    return {"ok": True, "accounts_removed": len(ids)}
 
 
 @app.exception_handler(Exception)
